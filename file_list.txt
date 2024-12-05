@@ -2,3 +2,6 @@
 1GB.bin 1GB
 200MB.zip 200MB
 512MB.zip 512MB
+5MB.zip
+10MB.zip
+20MB.zip
