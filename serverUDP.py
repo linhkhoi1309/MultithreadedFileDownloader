@@ -26,6 +26,8 @@ def load_file_metadata():
 
 # Handle client request
 def handle_client(server_socket, metadata):
+    download_in_progress = False
+
     try:
         while True:
             request, client_address = server_socket.recvfrom(4096)
@@ -43,11 +45,17 @@ def handle_client(server_socket, metadata):
                 response = "\n".join(f"{name} {size} bytes" for name, size in metadata.items())
                 server_socket.sendto(response.encode(), client_address)
             elif command.startswith("DOWNLOAD"):
+                if download_in_progress:
+                    server_socket.sendto(b"ERROR: Another download is in progress", client_address)
+                    continue
+
+                download_in_progress = True  # Set the flag to indicate a download is in progress
                 _, file_name, offset, chunk_size = command.split()
                 offset, chunk_size = int(offset), int(chunk_size)
                 
                 if file_name not in metadata:
                     server_socket.sendto(b"ERROR: File not found", client_address)
+                    download_in_progress = False  # Reset the flag
                     continue
 
                 file_path = os.path.join("server_files", file_name)
@@ -63,6 +71,8 @@ def handle_client(server_socket, metadata):
                 if ack.startswith(b'ACK'):
                     ack_part = struct.unpack('!I', ack[3:7])[0]
                     print(f"ACK received for part {ack_part}.")
+
+                download_in_progress = False  # Reset the flag after the download is complete
             else:
                 server_socket.sendto(b"ERROR: Invalid command", client_address)
     except Exception as e:
@@ -75,8 +85,7 @@ def start_server():
     server_socket.bind((HOST, PORT))
     print(f"Server listening on {HOST}:{PORT}")
     
-    while True:
-        handle_client(server_socket, metadata)
+    handle_client(server_socket, metadata)
     
 
 if __name__ == "__main__":

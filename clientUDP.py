@@ -9,15 +9,15 @@ HOST = '192.168.56.1'
 PORT = 5000
 INPUT_FILE = 'input.txt'
 DOWNLOAD_FOLDER = 'downloads'
-ACK_TIMEOUT = 5  # Timeout for ACK in seconds
+ACK_TIMEOUT = 1  # Timeout for ACK in seconds
 
 # Ensure download folder exists
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # Download a file chunk
-client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 def download_chunk(file_name, offset, chunk_size, part, total_parts, progress):
     try:
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         request = struct.pack('!I I I', offset, chunk_size, part)  # Pack offset, chunk_size, part
         client_socket.sendto(request, (HOST, PORT))
 
@@ -45,20 +45,11 @@ def download_chunk(file_name, offset, chunk_size, part, total_parts, progress):
 
                         progress[part - 1] = (received_size / chunk_size) * 100
 
-                except socket.timeout as e:
-                    if retries < 3:
-                        print(f"Retrying part {part}... ({retries}/{3})")
-                        retries += 1
-                        client_socket.sendto(request, (HOST, PORT))
-                    else:
-                        print(f"Failed to download part {part} after {3} retries.")
-                        break
-
-                #if received_size < chunk_size:
+                except socket.timeout:
                     # Resend request if no ACK received
-                    #print(f"Timeout waiting for ACK for part {part}. Resending...")
-                    #client_socket.sendto(request, (HOST, PORT))
-       
+                    print(f"Timeout waiting for ACK for part {part}. Resending...")
+                    client_socket.sendto(request, (HOST, PORT))
+
         client_socket.close()
     except Exception as e:
         print(f"Error downloading chunk: {e}")
