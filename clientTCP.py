@@ -4,7 +4,7 @@ import time
 from threading import Thread
 
 # Client configuration
-HOST = '192.168.56.1'
+HOST = '192.168.1.7'
 PORT = 5000
 INPUT_FILE = 'input.txt'
 DOWNLOAD_FOLDER = 'downloads'

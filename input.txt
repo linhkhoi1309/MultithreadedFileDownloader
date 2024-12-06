@@ -1,4 +1,2 @@
-100MB.bin
+100MB.zip
 200MB.zip
-512MB.zip
-1GB.bin
