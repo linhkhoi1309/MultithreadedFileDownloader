@@ -4,7 +4,7 @@ import time
 from threading import Thread
 
 # Client configuration
-HOST = '192.168.1.7'
+HOST = '192.168.56.1'
 PORT = 5000
 INPUT_FILE = 'input.txt'
 DOWNLOAD_FOLDER = 'downloads'
@@ -57,13 +57,19 @@ def download_file(file_name, file_size):
         threads.append(thread)
         thread.start()
 
-    while any(t.is_alive() for t in threads):
-        # Clear screen and reprint progress
-        os.system('cls' if os.name == 'nt' else 'clear')
-        print(f"Downloading {file_name}:")
-        for part in range(4):
-            print(f"Part {part + 1} .... {progress[part]:.2f}%")
-        time.sleep(0.5)
+    try:
+        while any(t.is_alive() for t in threads):
+            # Clear screen and reprint progress
+            os.system('cls' if os.name == 'nt' else 'clear')
+            print(f"Downloading {file_name}:")
+            for part in range(4):
+                print(f"Part {part + 1} .... {progress[part]:.2f}%")
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nDownload interrupted. Cleaning up...")
+        for thread in threads:
+            thread.join()
+        return  # Exit gracefully
 
     for thread in threads:
         thread.join()
@@ -74,35 +80,39 @@ def download_file(file_name, file_size):
 def start_client():
     downloaded_files = set()
 
-    while True:
-        with open(INPUT_FILE, 'r') as f:
-            files_to_download = {line.strip() for line in f}
+    try:
+        while True:
+            with open(INPUT_FILE, 'r') as f:
+                files_to_download = {line.strip() for line in f}
 
-        new_files = files_to_download - downloaded_files
-        if new_files:
-            for file_name in new_files:
-                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                client_socket.connect((HOST, PORT))
-                client_socket.sendall("LIST".encode())
-                file_list = client_socket.recv(4096).decode()
-                client_socket.close()
+            new_files = files_to_download - downloaded_files
+            if new_files:
+                for file_name in new_files:
+                    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    client_socket.connect((HOST, PORT))
+                    client_socket.sendall("LIST".encode())
+                    file_list = client_socket.recv(4096).decode()
+                    client_socket.close()
 
-                file_metadata = {}
-                for line in file_list.split("\n"):
-                    parts = line.rsplit(" ", 2)  # Split into [name, size, "bytes"]
-                    if len(parts) == 3 and parts[2] == "bytes":
-                        name, size, _ = parts
-                        file_metadata[name] = int(size)  # Convert size to integer
+                    file_metadata = {}
+                    for line in file_list.split("\n"):
+                        parts = line.rsplit(" ", 2)  # Split into [name, size, "bytes"]
+                        if len(parts) == 3 and parts[2] == "bytes":
+                            name, size, _ = parts
+                            file_metadata[name] = int(size)  # Convert size to integer
 
-                if file_name in file_metadata:
-                    print(f"Starting download: {file_name}")
-                    download_file(file_name, file_metadata[file_name])
-                    downloaded_files.add(file_name)
-                else:
-                    print(f"File not found: {file_name}")
+                    if file_name in file_metadata:
+                        print(f"Starting download: {file_name}")
+                        download_file(file_name, file_metadata[file_name])
+                        downloaded_files.add(file_name)
+                    else:
+                        print(f"File not found: {file_name}")
 
-        time.sleep(5)
-
+            time.sleep(5)
+    except KeyboardInterrupt:
+        print("\nQuiting the program...")
+    finally:
+        print("Goodbye!")
 
 if __name__ == "__main__":
     start_client()
