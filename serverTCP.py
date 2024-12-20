@@ -19,6 +19,10 @@ def load_file_metadata():
                 size_in_bytes = int(size_with_unit.replace("mb", "")) * (1024 ** 2)
             elif "gb" in size_with_unit:
                 size_in_bytes = int(size_with_unit.replace("gb", "")) * (1024 ** 3)
+            elif "kb" in size_with_unit:
+                size_in_bytes = int(size_with_unit.replace("kb", "")) * 1024
+            elif "b" in size_with_unit:
+                size_in_bytes = int(size_with_unit.replace("b", ""))
             else:
                 raise ValueError(f"Unsupported size format: {size_with_unit}")
 

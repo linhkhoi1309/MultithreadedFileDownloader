@@ -8,7 +8,7 @@ HOST = '192.168.56.1'
 PORT = 5000
 INPUT_FILE = 'input.txt'
 DOWNLOAD_FOLDER = 'downloads'
-
+file_metadata = {}
 # Ensure download folder exists
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
@@ -43,6 +43,9 @@ def merge_file(file_name, total_parts):
                 final_file.write(f.read())
             os.remove(part_file)
     print(f"Download complete: {file_name}")
+    print(f"FILE_LIST CAN DOWNLOAD: ")
+    for file in file_metadata:
+        print(f"{file}")
 
 # Download a file
 def download_file(file_name, file_size):
@@ -79,7 +82,21 @@ def download_file(file_name, file_size):
 # Main client function
 def start_client():
     downloaded_files = set()
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    client_socket.connect((HOST, PORT))
+    client_socket.sendall("LIST".encode())
+    file_list = client_socket.recv(4096).decode()
+    client_socket.close()
 
+
+    for line in file_list.split("\n"):
+        parts = line.rsplit(" ", 2)  # Split into [name, size, "bytes"]
+        if len(parts) == 3 and parts[2] == "bytes":
+            name, size, _ = parts
+            file_metadata[name] = int(size)  # Convert size to integer
+    print(f"FILE_LIST CAN DOWNLOAD: ")
+    for file in file_metadata:
+        print(f"{file}")
     try:
         while True:
             with open(INPUT_FILE, 'r') as f:
@@ -88,19 +105,6 @@ def start_client():
             new_files = files_to_download - downloaded_files
             if new_files:
                 for file_name in new_files:
-                    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    client_socket.connect((HOST, PORT))
-                    client_socket.sendall("LIST".encode())
-                    file_list = client_socket.recv(4096).decode()
-                    client_socket.close()
-
-                    file_metadata = {}
-                    for line in file_list.split("\n"):
-                        parts = line.rsplit(" ", 2)  # Split into [name, size, "bytes"]
-                        if len(parts) == 3 and parts[2] == "bytes":
-                            name, size, _ = parts
-                            file_metadata[name] = int(size)  # Convert size to integer
-
                     if file_name in file_metadata:
                         print(f"Starting download: {file_name}")
                         download_file(file_name, file_metadata[file_name])
