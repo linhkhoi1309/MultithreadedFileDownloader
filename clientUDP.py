@@ -5,7 +5,7 @@ import hashlib
 from threading import Thread
 
 # Client configuration
-HOST = '192.168.45.128'
+HOST = '192.168.56.1'
 PORT = 5000
 INPUT_FILE = 'input.txt'
 DOWNLOAD_FOLDER = 'downloads'

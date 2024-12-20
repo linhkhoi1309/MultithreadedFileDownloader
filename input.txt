@@ -1,2 +1,1 @@
-100MB.zip
-200MB.zip
+5MB.zip
