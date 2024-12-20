@@ -1,17 +1,15 @@
 import socket
 import os
-import struct
-import time
 import threading
+import hashlib
 
+# Server configuration
 HOST = '192.168.56.1'
 PORT = 5000
 FILE_LIST = 'file_list.txt'
+CHUNK_SIZE = 1024
 
-PACKET_SIZE = 1024
-TIMEOUT = 2.0
-WINDOW_SIZE = 4
-
+# Load file metadata
 def load_file_metadata():
     metadata = {}
     with open(FILE_LIST, 'r') as f:
@@ -23,113 +21,111 @@ def load_file_metadata():
                 size_in_bytes = int(size_with_unit.replace("mb", "")) * (1024 ** 2)
             elif "gb" in size_with_unit:
                 size_in_bytes = int(size_with_unit.replace("gb", "")) * (1024 ** 3)
+            elif "kb" in size_with_unit:
+                size_in_bytes = int(size_with_unit.replace("kb", "")) * 1024
+            elif "b" in size_with_unit:
+                size_in_bytes = int(size_with_unit.replace("b", ""))
             else:
                 raise ValueError(f"Unsupported size format: {size_with_unit}")
+
             metadata[name] = size_in_bytes
     return metadata
 
-def send_file_gbn(server_socket, client_address, file_path, offset, chunk_size):
-    # Similar GBN logic as before
-    server_socket.setblocking(True)
-    total_packets = (chunk_size + PACKET_SIZE - 1) // PACKET_SIZE
-    header = struct.pack('!Q I', chunk_size, total_packets)
-    server_socket.sendto(header, client_address)
-
-    with open(file_path, 'rb') as f:
-        f.seek(offset)
-        packets = []
-        for seq_num in range(total_packets):
-            data = f.read(PACKET_SIZE)
-            packet = struct.pack('!I', seq_num) + data
-            packets.append(packet)
-
-    base = 0
-    next_seq_num = 0
-    start_time = None
-
-    # Set timeout for the GBN process only
-    server_socket.settimeout(TIMEOUT)
-
+# Handle client request
+def handle_client(data, addr, server_socket, metadata):
     try:
-        while base < total_packets:
-            # Send packets within the window
-            while next_seq_num < total_packets and next_seq_num < base + WINDOW_SIZE:
-                server_socket.sendto(packets[next_seq_num], client_address)
-                next_seq_num += 1
+        request = data.decode()
+        #print(f"Received request from {addr}: {request}")
 
-            try:
-                # Wait for ACKs
-                ack_data, _ = server_socket.recvfrom(1024)
-                if ack_data.startswith(b'ACK'):
-                    ack_seq = struct.unpack('!I', ack_data[3:7])[0]
-                    if ack_seq >= base:
-                        base = ack_seq + 1  # Slide window
-            except socket.timeout:
-                # Timeout occurred, retransmit from base
-                for seq_num in range(base, min(base + WINDOW_SIZE, total_packets)):
-                    server_socket.sendto(packets[seq_num], client_address)
-            except BlockingIOError:
-                    time.sleep(0.01)
-    finally:
-        server_socket.settimeout(None)
+        # Split the request into parts and validate
+        parts = request.split()
+        if not parts:
+            raise ValueError("Empty or invalid request format")
 
-    print(f"Finished sending offset {offset}, size {chunk_size} to {client_address}")
+        command = parts[0]
+        args = parts[1:]
 
-def handle_client_request(server_socket, metadata, request, client_address):
-    command_parts = request.decode('utf-8', errors='ignore').strip().split()
-    if len(command_parts) == 0:
-        return
+        if command == "LIST":
+            # Handle file list request
+            response = "\n".join(f"{name} {size} bytes" for name, size in metadata.items())
+            server_socket.sendto(response.encode(), addr)
 
-    cmd = command_parts[0]
-    if cmd == "LIST":
-        response = "\n".join(f"{name} {size} bytes" for name, size in metadata.items())
-        server_socket.sendto(response.encode(), client_address)
-    elif cmd == "DOWNLOAD" and len(command_parts) == 4:
-        file_name = command_parts[1]
-        try:
-            offset = int(command_parts[2])
-            chunk_size = int(command_parts[3])
-        except ValueError:
-            server_socket.sendto(b"ERROR: Invalid offset/size", client_address)
-            return
+        elif command == "REQUEST":
+            # Validate the REQUEST format
+            if len(args) != 4:
+                raise ValueError("Invalid REQUEST format")
 
-        if file_name not in metadata:
-            server_socket.sendto(b"ERROR: File not found", client_address)
-            return
+            file_name, offset, chunk_size, seq_num = args
+            offset, chunk_size, seq_num = int(offset), int(chunk_size), int(seq_num)
 
-        file_path = os.path.join("server_files", file_name)
-        if not os.path.exists(file_path):
-            server_socket.sendto(b"ERROR: File not found on server", client_address)
-            return
+            if file_name not in metadata:
+                error_msg = "ERROR: File not found"
+                server_socket.sendto(error_msg.encode(), addr)
+                return
 
-        send_file_gbn(server_socket, client_address, file_path, offset, chunk_size)
-    else:
-        server_socket.sendto(b"ERROR: Invalid command", client_address)
+            file_path = os.path.join("server_files", file_name)
+            with open(file_path, 'rb') as f:
+                f.seek(offset)
+                data = f.read(chunk_size)
 
-def handle_client(server_socket, metadata):
-    # Ensure the main listening socket does NOT have a timeout
-    server_socket.settimeout(None)
-    while True:
-        try:
-            request, client_address = server_socket.recvfrom(4096)
-        except socket.timeout:
-            # If we ever set a timeout above, handle it gracefully
-            continue
-        except OSError:
-            # Socket closed or error
-            break
+            # Prepare and send the data packet
+            header = f"DATA {seq_num}".ljust(64).encode()
+            packet = header + data
+            server_socket.sendto(packet, addr)
 
-        # Handle request in a new thread for concurrency
-        t = threading.Thread(target=handle_client_request, args=(server_socket, metadata, request, client_address))
-        t.start()
+        elif command == "ACK":
+            # Handle ACK message
+            if len(args) != 1:
+                raise ValueError("Invalid ACK format")
+            seq_num = int(args[0])
+            #print(f"ACK received for sequence number: {seq_num}")
 
+        else:
+            # Handle unknown commands
+            error_msg = "ERROR: Invalid command"
+            server_socket.sendto(error_msg.encode(), addr)
+
+    except ValueError as ve:
+        print(f"Error handling client (ValueError): {ve}")
+    except Exception as e:
+        print(f"Error handling client: {e}")
+
+        
+# Main server function
 def start_server():
     metadata = load_file_metadata()
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind((HOST, PORT))
     print(f"Server listening on {HOST}:{PORT}")
 
-    handle_client(server_socket, metadata)
+    # Flag to ensure the server serves only one client
+    client_serving = False
+
+    while True:
+        try:
+            # If the server is already serving a client, ignore new connections
+            if client_serving:
+                data, addr = server_socket.recvfrom(CHUNK_SIZE + 64)
+                print(f"Server is already serving a client. Ignoring new request from {addr}")
+                continue  # Skip to the next iteration (do not process this request)
+
+            # Accept a new client (only one client will be served)
+            data, addr = server_socket.recvfrom(CHUNK_SIZE + 64)
+            client_serving = True  # Set the flag to True, indicating the server is serving a client
+            #print(f"New client connected: {addr}")
+
+            # Handle the client in a separate thread
+            threading.Thread(target=handle_client, args=(data, addr, server_socket, metadata)).start()
+
+            # Reset the client_serving flag when the client has finished
+            client_serving = False
+
+        except KeyboardInterrupt:
+            print("Shutting down server...")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
 
 if __name__ == "__main__":
     start_server()
+
