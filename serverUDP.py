@@ -1,7 +1,6 @@
 import socket
 import os
 import threading
-import hashlib
 
 # Server configuration
 HOST = '192.168.56.1'

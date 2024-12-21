@@ -1,7 +1,6 @@
 import socket
 import os
 import time
-import hashlib
 from threading import Thread
 
 # Client configuration
@@ -15,13 +14,6 @@ file_metadata = {}
 
 # Ensure download folder exists
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
-
-def calculate_checksum(file_path, algo='md5'):
-    hasher = hashlib.new(algo)
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(4096), b''):
-            hasher.update(chunk)
-    return hasher.hexdigest()
 
 def send_packet(sock, addr, packet):
     sock.sendto(packet, addr)
@@ -80,10 +72,6 @@ def merge_file(file_name, total_parts):
                 final_file.write(f.read())
             os.remove(part_file)
     print(f"Download complete: {file_name}")
-
-    # Calculate and display checksum
-    checksum = calculate_checksum(final_file_path, algo='sha256')
-    #print(f"Checksum (SHA256) for {file_name}: {checksum}")
 
 # Download a file
 def download_file(file_name, file_size):
